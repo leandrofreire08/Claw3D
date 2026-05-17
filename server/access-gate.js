@@ -105,6 +105,29 @@ function createAccessGate(options) {
 
   const handleHttp = (req, res) => {
     if (!enabled) return false;
+
+    // Handle login form POST - must be checked before auth
+    if (req.method === "POST" && String(req.url || "/") === "/_studio_login") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        const params = new URLSearchParams(body);
+        const submitted = params.get("token") || "";
+        const redirect = params.get("redirect") || "/";
+        if (safeCompare(submitted, token)) {
+          res.statusCode = 302;
+          res.setHeader("Location", redirect);
+          res.setHeader("Set-Cookie", `${cookieName}=${token}; Path=/; Max-Age=86400; SameSite=Lax`);
+          res.end();
+        } else {
+          res.statusCode = 302;
+          res.setHeader("Location", `/_studio_login?error=1&redirect=${encodeURIComponent(redirect)}`);
+          res.end();
+        }
+      });
+      return true;
+    }
+
     const auth = getAuthState(req);
     if (!auth.authorized) {
       const statusCode = auth.limited ? 429 : 401;
@@ -119,13 +142,96 @@ function createAccessGate(options) {
           })
         );
       } else {
-        res.statusCode = statusCode;
-        res.setHeader("Content-Type", "text/plain");
-        res.end(
-          auth.limited
-            ? "Too many failed studio access attempts. Wait a minute and retry."
-            : "Studio access token required. Set the studio_access cookie to access this page."
-        );
+        const currentUrl = encodeURIComponent(req.url || "/");
+        const errorMsg = auth.limited ? "too-many" : (String(req.url || "/").includes("error=1") ? "invalid" : "");
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.end(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claw3D - Acesso</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #1e293b;
+      padding: 2rem;
+      border-radius: 12px;
+      width: 100%;
+      max-width: 400px;
+      margin: 1rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: #facc15;
+    }
+    p {
+      color: #94a3b8;
+      margin-bottom: 1.5rem;
+      font-size: 0.875rem;
+    }
+    input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+    input:focus {
+      outline: 2px solid #facc15;
+      border-color: transparent;
+    }
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background: #facc15;
+      color: #0f172a;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #eab308; }
+    .error {
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🔐 Claw3D</h1>
+    <p>Digite o token de acesso para entrar no estúdio.</p>
+    ${errorMsg === "invalid" ? '<div class="error">❌ Token inválido. Tente novamente.</div>' : ""}
+    ${errorMsg === "too-many" ? '<div class="error">⚠️ Muitas tentativas. Aguarde 1 minuto.</div>' : ""}
+    <form method="POST" action="/_studio_login">
+      <input type="hidden" name="redirect" value="${currentUrl}">
+      <input type="password" name="token" placeholder="Token de acesso" autofocus>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>`);
       }
       return true;
     }
