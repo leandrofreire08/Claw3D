@@ -1,34 +1,31 @@
-# Claw3D - 3D agent visualization for OpenClaw.
-# Multi-stage build: install prod deps -> build Next.js -> run with custom server.
-
-FROM node:20-slim AS deps
+FROM node:22-slim AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --omit=dev
-
-FROM node:20-slim AS builder
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+COPY package*.json ./
+RUN npm ci
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
-# Build-time gateway URL (overridden at runtime by CLAW3D_GATEWAY_URL).
-ENV NEXT_PUBLIC_GATEWAY_URL=ws://127.0.0.1:18789
 RUN npm run build
 
-FROM node:20-slim AS runner
+FROM node:22-slim
 WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init && rm -rf /var/lib/apt/lists/*
 
-# Copy built app + custom server + production node_modules only.
+# Copia node_modules e build
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
 COPY --from=builder /app/server ./server
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/next.config.* ./
+COPY --from=builder /app/.env* ./
+
+# Startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 EXPOSE 3000
 
-CMD ["node", "server/index.js"]
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=3000
+
+CMD ["dumb-init", "/app/start.sh"]
