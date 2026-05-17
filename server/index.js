@@ -1,6 +1,8 @@
 const http = require("node:http");
 const https = require("node:https");
 const next = require("next");
+const { fork } = require("node:child_process");
+const path = require("node:path");
 
 const { createAccessGate } = require("./access-gate");
 const { createGatewayProxy } = require("./gateway-proxy");
@@ -74,6 +76,25 @@ async function main() {
       host,
       studioAccessToken: process.env.STUDIO_ACCESS_TOKEN,
     });
+  }
+
+  // Auto-start demo gateway if no external gateway URL is configured
+  const demoPort = parseInt(process.env.DEMO_ADAPTER_PORT || "18789", 10);
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || process.env.CLAW3D_GATEWAY_URL || "";
+  if (!gatewayUrl || gatewayUrl.includes("localhost:18789") || gatewayUrl.includes("127.0.0.1:18789")) {
+    console.info(`[demo] Starting demo gateway on 0.0.0.0:${demoPort} ...`);
+    const demoChild = fork(path.join(__dirname, "demo-gateway-adapter.js"), [], {
+      env: { ...process.env, DEMO_ADAPTER_PORT: String(demoPort) },
+      stdio: "pipe",
+    });
+    demoChild.stdout?.on("data", (d) => process.stdout.write(`[demo] ${d}`));
+    demoChild.stderr?.on("data", (d) => process.stderr.write(`[demo] ${d}`));
+    demoChild.on("exit", (code) => {
+      if (code !== 0) console.error(`[demo] Demo gateway exited with code ${code}`);
+    });
+    // Wait a moment for the gateway to start
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    console.info(`[demo] Demo gateway started (PID ${demoChild.pid})`);
   }
 
   const app = next({
