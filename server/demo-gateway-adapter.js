@@ -508,7 +508,7 @@ function startAdapter() {
     ws.on("error", () => activeSendEventFns.delete(sendEventFn));
   });
 
-  httpServer.listen(ADAPTER_PORT, "127.0.0.1", () => {
+  httpServer.listen(ADAPTER_PORT, "0.0.0.0", () => {
     console.log(`[demo-gateway] Listening on ws://localhost:${ADAPTER_PORT}`);
     console.log("[demo-gateway] No OpenClaw or Hermes required.");
   });
