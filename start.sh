@@ -2,6 +2,14 @@
 # Claw3D startup script - runs demo gateway + Next.js server
 set -e
 
+# Carrega variaveis do .env se existir
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a
+  source "$SCRIPT_DIR/.env"
+  set +a
+fi
+
 # Config
 STUDIO_PORT="${PORT:-3000}"
 DEMO_PORT="${DEMO_ADAPTER_PORT:-18789}"
@@ -12,9 +20,6 @@ echo "Studio port: $STUDIO_PORT"
 echo "Demo gateway port: $DEMO_PORT"
 echo "Access token: ${STUDIO_TOKEN:+configurado}${STUDIO_TOKEN:-desabilitado}"
 echo ""
-
-# Get the directory where the script lives
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Start demo gateway in background
 echo "[demo-gateway] Starting on ws://localhost:$DEMO_PORT ..."
