@@ -80,8 +80,36 @@ async function main() {
 
   // Auto-start demo gateway if no external gateway URL is configured
   const demoPort = parseInt(process.env.DEMO_ADAPTER_PORT || "18789", 10);
+  const hermesApiUrl = process.env.HERMES_API_URL || "";
+  const hermesAdapterPort = parseInt(process.env.HERMES_ADAPTER_PORT || "18790", 10);
   const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || process.env.CLAW3D_GATEWAY_URL || "";
-  if (!gatewayUrl || gatewayUrl.includes("localhost:18789") || gatewayUrl.includes("127.0.0.1:18789")) {
+
+  // Priority: Hermes adapter > demo gateway
+  let upstreamUrl = gatewayUrl;
+
+  if (hermesApiUrl && !gatewayUrl) {
+    // Auto-start Hermes gateway adapter
+    console.info(`[hermes] Starting Hermes gateway adapter on 127.0.0.1:${hermesAdapterPort} ...`);
+    console.info(`[hermes] Hermes API URL: ${hermesApiUrl}`);
+
+    const hermesChild = fork(path.join(__dirname, "hermes-gateway-adapter.js"), [], {
+      env: {
+        ...process.env,
+        HERMES_ADAPTER_PORT: String(hermesAdapterPort),
+      },
+      stdio: "pipe",
+    });
+
+    hermesChild.stdout?.on("data", (d) => process.stdout.write(`[hermes] ${d}`));
+    hermesChild.stderr?.on("data", (d) => process.stderr.write(`[hermes] ${d}`));
+    hermesChild.on("exit", (code) => {
+      if (code !== 0) console.error(`[hermes] Hermes adapter exited with code ${code}`);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    console.info(`[hermes] Hermes adapter started (PID ${hermesChild.pid})`);
+    upstreamUrl = `ws://localhost:${hermesAdapterPort}`;
+  } else if (!gatewayUrl || gatewayUrl.includes("localhost:18789") || gatewayUrl.includes("127.0.0.1:18789")) {
     console.info(`[demo] Starting demo gateway on 0.0.0.0:${demoPort} ...`);
     const demoChild = fork(path.join(__dirname, "demo-gateway-adapter.js"), [], {
       env: { ...process.env, DEMO_ADAPTER_PORT: String(demoPort) },
@@ -92,7 +120,6 @@ async function main() {
     demoChild.on("exit", (code) => {
       if (code !== 0) console.error(`[demo] Demo gateway exited with code ${code}`);
     });
-    // Wait a moment for the gateway to start
     await new Promise((resolve) => setTimeout(resolve, 2000));
     console.info(`[demo] Demo gateway started (PID ${demoChild.pid})`);
   }
@@ -111,6 +138,9 @@ async function main() {
 
   const proxy = createGatewayProxy({
     loadUpstreamSettings: async () => {
+      if (upstreamUrl) {
+        return { url: upstreamUrl, token: "", adapterType: "hermes" };
+      }
       const settings = loadUpstreamGatewaySettings(process.env);
       return { url: settings.url, token: settings.token, adapterType: settings.adapterType };
     },
