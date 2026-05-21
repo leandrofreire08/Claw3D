@@ -21,6 +21,7 @@ EXPOSE 3000
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
-    DEMO_ADAPTER_PORT=18789
+    DEMO_ADAPTER_PORT=18789 \
+    UPSTREAM_ALLOWLIST=localhost
 
 CMD ["dumb-init", "node", "server/index.js"]
